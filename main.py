@@ -10,6 +10,7 @@ height = 700
 grid_size = 20
 number_of_moves = grid_size * 10
 population = 1000
+survivor_procent = 25
 curr_moves = 1
 generation = 1
 mode = "wall"
@@ -149,24 +150,18 @@ def create_population(size):
 
 def calculate_fitness(players):
     distance_list = {}
-    running_fitness = 0
 
     for player in players:
-        curr_fitness = 1 / ((player.calculate_distance() * 0.7 + player.moves / coins_distance[player.collected_coins] * 0.3) ** 2) + player.fitnes_sum + player.finished_fitness
+        curr_fitness = 1 / ((player.calculate_distance() * 0.7 + player.moves / coins_distance[player.collected_coins] * 0.3) ** 2) + player.fitnes_sum + player.finished_fitness + random.uniform(0.000001, 0.00000001)
+        distance_list[curr_fitness] = player
 
-        distance_list[curr_fitness + running_fitness] = player
-        running_fitness += curr_fitness
+    final_fitness_list = {}
+    keys = sorted(list(distance_list.keys()))
 
-    keys = list(distance_list.keys())
-    best_parent_key = [keys[0], distance_list[keys[0]]]
+    for key in list(keys)[len(keys) - len(keys) // survivor_procent:]:
+        final_fitness_list[key] = distance_list[key]
 
-    for i in range(1, len(keys)):
-        curr_diff = keys[i] - keys[i-1]
-
-        if curr_diff > best_parent_key[0]:
-            best_parent_key = [curr_diff, distance_list[keys[i]]]
-
-    return distance_list, best_parent_key[1].instructions[:] 
+    return final_fitness_list, distance_list[keys[-1]].instructions[:]
 
 
 
@@ -341,11 +336,9 @@ pygame.quit()
 
 
 # to do
-# pick only the top 10% / 25% of players to make children
-
 # multiprocesing maybe ?? hmmm
 
 
 # note to myself
 # I accualy have a terminal brain cancer and dementia go kys
-# new enemy fittnes function pls man i have a familys
+# new enemy fittnes function pls man i have a family
