@@ -7,20 +7,24 @@ pygame.init()
 #variables
 width = 700
 height = 700
-grid_size = 50
-number_of_moves = 300
-population = 2000
+grid_size = 20
+number_of_moves = grid_size * 10
+population = 1000
 curr_moves = 1
 generation = 1
+mode = "wall"
 block_size = width // grid_size
 players = []
 player_positions = []
 players_in_finish = []
-number_of_moves_list = [number_of_moves]
 list_instructions = ["move_up", "move_down", "move_left", "move_right"]
 walls_possitions = []
+coins_possitions = []
+coins_distance = []
 run = True
 start = False
+finish_possition = None
+min_moves = None
 
 auto_move = pygame.USEREVENT + 1
 pygame.time.set_timer(auto_move, 10)
@@ -30,27 +34,30 @@ pygame.time.set_timer(auto_move, 10)
 # 1 = player
 # 2 = end point
 # 3 - wall
+# 4 - best player
+# 5 - coin
 board = [[0 for _ in range(grid_size)] for _ in range(grid_size)]
-
-point_pos = (49, 49)
-board[point_pos[0]][point_pos[1]] = 2 
-
-for y, x in walls_possitions:
-    board[y][x] = 3
 
 # screen
 screen = pygame.display.set_mode((width, height))
 screen.fill((255,255,255))
 
 # functions
-def draw_players_to_board(players, player_positions):
+def put_objects_to_board():
     for y, x in player_positions:
         board[y][x] = 0
     
     for y, x in walls_possitions:
         board[y][x] = 3
 
-    board[point_pos[0]][point_pos[1]] = 2
+    for y, x in coins_possitions[:len(coins_possitions)-1]:
+        board[y][x] = 5
+
+    board[coins_possitions[-1][0]][coins_possitions[-1][1]] = 2
+
+def draw_players_to_board(players, player_positions):
+    if start == True:
+        put_objects_to_board()
 
     player_positions = []
 
@@ -58,7 +65,7 @@ def draw_players_to_board(players, player_positions):
         y, x = player.pos
 
         if player.is_best == True:
-            board[y][x] = 2
+            board[y][x] = 4
         else:
             board[y][x] = 1
 
@@ -81,14 +88,22 @@ def draw_screen(board):
                 pygame.draw.rect(screen, (0,255,0), pygame.Rect(block_size * j, block_size * x, block_size, block_size))
             elif board[x][j] == 3:
                 pygame.draw.rect(screen, (255,0,0), pygame.Rect(block_size * j, block_size * x, block_size, block_size))
+            elif board[x][j] == 4:
+                pygame.draw.rect(screen, (0,0,255), pygame.Rect(block_size * j, block_size * x, block_size, block_size))
+            elif board[x][j] == 5:
+                pygame.draw.rect(screen, (255,255,0), pygame.Rect(block_size * j, block_size * x, block_size, block_size))
 
 
 class Player:
-    def __init__(self, inctructions):
+    def __init__(self, inctructions, coins_possitions):
         self.pos = (0, 0)
         self.moves = 0
         self.instructions = inctructions
         self.is_best = False
+        self.collected_coins = 0
+        self.c_pos = coins_possitions
+        self.fitnes_sum = 0
+        self.finished_fitness = 0
 
     def move(self):
         getattr(self, self.instructions[self.moves])()
@@ -110,19 +125,24 @@ class Player:
         if self.pos[1] != grid_size - 1 and board[self.pos[0]][self.pos[1]+1] != 3:
             self.pos = (self.pos[0], self.pos[1] + 1)
 
-    def calculate_distance(self, point_pos):
-        return point_pos[0] - self.pos[0] + point_pos[1] - self.pos[1] + 1
+    def calculate_distance(self):
+        return abs(self.c_pos[self.collected_coins][0] - self.pos[0]) + abs(self.c_pos[self.collected_coins][1] - self.pos[1]) + 1
     
-    def check_for_end(self, point_pos):
-        if self.calculate_distance(point_pos) == 1:
+    def check_for_end(self):
+        if self.calculate_distance() == 1 and self.collected_coins == len(self.c_pos) - 1:
+            self.finished_fitness = 5
             return True
+        
+        elif self.calculate_distance() == 1:
+            self.fitnes_sum += 1 / ((0.7 + self.moves / coins_distance[self.collected_coins] * 0.3) ** 2)
+            self.collected_coins += 1
 
 
 
 
 def create_population(size):
     for i in range(0, size):
-        p = Player([random.choice(list_instructions) for _ in range(number_of_moves)])
+        p = Player([random.choice(list_instructions) for _ in range(number_of_moves)], coins_possitions)
         players.append(p)
 
 
@@ -132,7 +152,8 @@ def calculate_fitness(players):
     running_fitness = 0
 
     for player in players:
-        curr_fitness = 1 / ((player.calculate_distance(point_pos) + (player.moves * 0.2)) **2)
+        curr_fitness = 1 / ((player.calculate_distance() * 0.7 + player.moves / coins_distance[player.collected_coins] * 0.3) ** 2) + player.fitnes_sum + player.finished_fitness
+
         distance_list[curr_fitness + running_fitness] = player
         running_fitness += curr_fitness
 
@@ -160,7 +181,7 @@ def mutate(parents, best_parent):
             if random.random() < mutate_chance:
                 new_instructions[i] = random.choice(list_instructions)
 
-        new_players.append(Player(new_instructions))
+        new_players.append(Player(new_instructions, coins_possitions))
 
     new_players.append(best_parent)
     return new_players
@@ -194,7 +215,7 @@ def get_parent(distance_list):
 
 def create_new_gen(players):
     fittnes_list, best_parent = calculate_fitness(players)
-    best_p = Player(best_parent)
+    best_p = Player(best_parent, coins_possitions)
     best_p.is_best = True
 
     parents = get_parent(fittnes_list)
@@ -203,10 +224,16 @@ def create_new_gen(players):
     return players
 
 
-def get_best(fittnes_list):
-    return max(fittnes_list)
+def calculate_coins_distance():
+    for i, vals in enumerate(coins_possitions):
+        y, x = vals
 
-
+        if i == 0:
+            curr_distance = y + x
+        else:
+            curr_distance = abs(coins_possitions[i-1][1] - x) + abs(coins_possitions[i-1][0] - y)
+        
+        coins_distance.append(curr_distance)
 
 
 
@@ -227,12 +254,15 @@ while run:
                 curr_moves += 1 
 
                 if curr_moves > number_of_moves:
-                    print("generation: ", generation, " | least moves = ", min(number_of_moves_list))
-                    number_of_moves = min(number_of_moves_list)
+                    print("generation: ", generation, " | least moves = ", min_moves)
+
+                    if min_moves != None:
+                        number_of_moves = min(min_moves, number_of_moves)
+                    
+                    min_moves = None
 
                     players = create_new_gen(players)
                     players_in_finish = []
-                    number_of_moves_list = [number_of_moves]
 
                     curr_moves = 1
                     generation += 1
@@ -244,9 +274,11 @@ while run:
 
                     player.move()
 
-                    if player.check_for_end(point_pos) == True:
+                    if player.check_for_end() == True:
                         players_in_finish.append(i)
-                        number_of_moves_list.append(player.moves)
+
+                        if min_moves == None:
+                            min_moves = player.moves + 1
 
                 player_positions = draw_players_to_board(players, player_positions)
                 draw_screen(board)
@@ -254,9 +286,22 @@ while run:
 
 
         if event.type == pygame.KEYDOWN:
+
             if event.key == pygame.K_ESCAPE:
                 run = False
-            if event.key == pygame.K_s:
+
+            elif event.key == pygame.K_1:
+                mode = "wall"
+
+            elif event.key == pygame.K_2:
+                mode = "coin"
+
+            elif event.key == pygame.K_3:
+                mode = "finish"
+
+            elif event.key == pygame.K_s:
+                coins_possitions.append(finish_possition)
+                calculate_coins_distance()
                 start = True
         
         if pygame.mouse.get_pressed()[0]:
@@ -268,8 +313,21 @@ while run:
                 if x >= grid_size or y >= grid_size or x < 0 or y < 0:
                     continue
                 
-                board[y][x] = 3
-                walls_possitions.append((y, x))
+                if mode == "wall":
+                    if (y, x) not in walls_possitions:
+                        board[y][x] = 3
+                        walls_possitions.append((y, x))
+
+                elif mode == "coin":
+                    if (y, x) not in coins_possitions:
+                        board[y][x] = 5
+                        coins_possitions.append((y, x))
+                
+                elif mode == "finish":
+                    if finish_possition == None:
+                        board[y][x] = 2
+                        finish_possition = (y, x)
+
 
                 draw_screen(board)
                 pygame.display.update() 
@@ -279,20 +337,15 @@ while run:
 
         
 
-
-
 pygame.quit()
 
 
+# to do
+# pick only the top 10% / 25% of players to make children
 
-# if event.type == pygame.MOUSEBUTTONDOWN:
-#             if button.check():
-                # x, y = pygame.mouse.get_pos()
-                # y //= block_size
-                # x //= block_size
-                
-                # board[y][x] = 3
-                # walls_possitions.append((y, x))
+# multiprocesing maybe ?? hmmm
 
-                # draw_screen(board)
-                # pygame.display.update()  
+
+# note to myself
+# I accualy have a terminal brain cancer and dementia go kys
+# new enemy fittnes function pls man i have a familys
