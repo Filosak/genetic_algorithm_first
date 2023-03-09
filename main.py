@@ -336,9 +336,4 @@ pygame.quit()
 
 
 # to do
-# multiprocesing maybe ?? hmmm
-
-
-# note to myself
-# I accualy have a terminal brain cancer and dementia go kys
-# new enemy fittnes function pls man i have a family
+# multiprocesing
